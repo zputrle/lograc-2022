@@ -101,14 +101,24 @@ postulate
 -}
 
 +-identityʳ : (n : ℕ) → n + zero ≡ n
-+-identityʳ n = {!!}
++-identityʳ zero = refl
++-identityʳ (suc n) =
+   begin
+   suc (n + zero) ≡⟨ cong suc (+-identityʳ n) ⟩
+   suc n
+   ∎
+-- Used ideas: Proof by induction + cong - IH gives us a way of showing n + zero ≡ n
+-- Question: Is there a way to substitut the right part of equaility according to a equality proposition?
+-- Question: How to write r?
 
 +-identityˡ : (n : ℕ) → zero + n ≡ n
-+-identityˡ n = {!!}
++-identityˡ n = refl
+-- Used ideas: definition of (Agda is able to simplify zero + n by def.) + refl
 
 +-suc : (n m : ℕ) → n + (suc m) ≡ suc (n + m)
-+-suc n m = {!!}
-
++-suc zero m = refl
++-suc (suc n) m = cong suc (+-suc n m)
+-- Used ideas: Sam as proof of 'n + zero ≡ n'
 
 ----------------
 -- Exercise 1 --
@@ -141,7 +151,9 @@ data Maybe (A : Set) : Set where
   nothing : Maybe A
 
 lookup : {A : Set} {n : ℕ} → Vec A n → ℕ → Maybe A
-lookup xs i = {!!}
+lookup [] i = nothing
+lookup (x ∷ xs) zero = just x
+lookup (x ∷ xs) (suc i) = lookup xs i
 
 
 ----------------
@@ -179,7 +191,15 @@ lookup-totalᵀ : {n : ℕ}
               → i < n                           -- `i` in `{0,1,...,n-1}`
               → lookup xs i ≡ just ⋆
              
-lookup-totalᵀ xs i p = {!!}
+lookup-totalᵀ (⋆ ∷ xs) zero p = refl
+lookup-totalᵀ (x ∷ xs) (suc i) (s≤s p) = lookup-totalᵀ xs i p
+-- Used idea: cases on xs, x and p
+--    - we need to do the cases to convince Agda to check what are the cases and
+--       come to conclusion that one of the cases is not possible where in the case
+--       of one constructure it replaces it
+--    - because we are not sure why p holds we can do cases on it and Agda will elaborate
+
+-- Question: suc i ≤ n = i < n
 
 {-
    Note: In the standard library, `⊤` is defined as a record type. Here
@@ -218,7 +238,11 @@ data Fin : ℕ → Set where
   suc  : {n : ℕ} (i : Fin n) → Fin (suc n)
 
 safe-lookup : {A : Set} {n : ℕ} → Vec A n → Fin n → A
-safe-lookup xs i = {!!}
+safe-lookup (x ∷ xs) zero = x
+safe-lookup (x ∷ xs) (suc i) = safe-lookup xs i
+-- TODO: Check why the patternmatching on xs does not jields the base case.
+
+test-safe-lookup = safe-lookup (1 ∷ 2 ∷ 3 ∷ 4 ∷ []) (suc (suc zero))
 
 
 ----------------
@@ -238,8 +262,9 @@ safe-lookup xs i = {!!}
    the correct type, the yellow highlighting below will disappear.
 -}
 
-nat-to-fin : {!!}
-nat-to-fin = {!!}
+nat-to-fin : {n : ℕ} → (i : ℕ) → (p : i < n) → Fin n
+nat-to-fin zero (s≤s p) = zero
+nat-to-fin (suc i) (s≤s p) = suc (nat-to-fin i p)
 
 lookup-correct : {A : Set} {n : ℕ}
                → (xs : Vec A n)
@@ -247,8 +272,13 @@ lookup-correct : {A : Set} {n : ℕ}
                → (p : i < n)
                → lookup xs i ≡ just (safe-lookup xs (nat-to-fin i p))
 
-lookup-correct x i p = {!!}
-
+lookup-correct (x ∷ xs) zero (s≤s p) = refl
+lookup-correct (x ∷ xs) (suc i) (s≤s p) = lookup-correct xs i p
+-- Used ideas:
+--    - proof by induction
+--    - you need to tell Agda to consider all the cases (explicitly, argument by argument);
+--          only this way, Agda adds all the constraints needed to deduce that it can construct some element
+--          (e.g. some element of Fin A n)
 
 ----------------
 -- Exercise 5 --
@@ -260,8 +290,14 @@ lookup-correct x i p = {!!}
 -}
 
 take-n : {A : Set} {n m : ℕ} → Vec A (n + m) → Vec A n
-take-n xs = {!!}
+take-n {A} {n} {zero} xs = subst (Vec A) (+-identityʳ n) xs
+take-n {A} {zero} {suc m} xs = []
+take-n {A} {suc n} {suc m} (x ∷ xs) = take-n ((subst (Vec A) (+-suc n m) xs ))
 
+-- Used idea:
+--    - Proof by induction on the right variable.
+--    - Use `subst` to construct the right element.
+--    - If I would not have a proof of `+-identityʳ` and `+-suc`, I would need to prove them while proving `take-n`.
 
 ----------------
 -- Exercise 6 --
@@ -273,9 +309,25 @@ take-n xs = {!!}
    by recursion. Use `take-n` and equational reasoning instead.
 -}
 
-take-n' : {A : Set} {n m : ℕ} → Vec A (m + n) → Vec A n
-take-n' xs = {!!}
+-- +-suc' : (n m : ℕ) → suc n + m ≡  suc (m + n) 
+-- +-suc' n m = begin {! suc n + m  !} ≡⟨ {! +-  !} ⟩ {!   !}
 
++-comm : (n m : ℕ) → n + m ≡ m + n
+-- +-comm zero m = subst (λ x →  m ≡ x) (sym (+-identityʳ m)) refl
++-comm zero m rewrite +-identityʳ m = refl
++-comm (suc n) m = sym (subst (λ x → x ≡ suc n + m) (sym (+-suc m n)) (cong suc (+-comm m n)))
+-- Note, rewrite applies the following equality to the right side, i.e. if we have equality a = b
+--    and we apply b = c with rewrite we get a = c.
+
+private
+   sub-take-n : {A : Set} {n m : ℕ} → Vec A (n + m) ≡ Vec A (m + n)
+   sub-take-n {A} {n} {m} = begin Vec A (n + m) ≡⟨ cong (λ x → Vec A x) (+-comm n m) ⟩ refl
+
+take-n' : {A : Set} {n m : ℕ} → Vec A (m + n) → Vec A n
+take-n' {A} {n} {m} = subst ((λ x → (x →  Vec A n))) (sub-take-n {A} {n} {m}) (take-n {A} {n} {m})
+
+-- Used ideas:
+--    - If you have a similar result you can use equational reasoning to derive the result.
 
 ----------------
 -- Exercise 7 --
@@ -287,7 +339,8 @@ take-n' xs = {!!}
 -}
 
 vec-list : {A : Set} {n : ℕ} → Vec A n → List A
-vec-list xs = {!!}
+vec-list [] = []
+vec-list (x ∷ xs) = x ∷ (vec-list xs)
 
 {-
    Define a function from lists to vectors that is identity on the
@@ -297,8 +350,9 @@ vec-list xs = {!!}
    natural number specifying the length of the returned vector.
 -}
 
-list-vec : {A : Set} → (xs : List A) → Vec A {!!}
-list-vec xs = {!!}
+list-vec : {A : Set} → (xs : List A) → Vec A (length xs)
+list-vec [] = []
+list-vec (x ∷ xs) = x ∷ (list-vec xs)
 
 
 ----------------
@@ -310,12 +364,16 @@ list-vec xs = {!!}
    length as the given vector.
 -}
 
+private
+   length-suc : {A : Set} → (x : A) → (xs : List A) → length (x ∷ xs) ≡ suc (length xs)
+   length-suc x xs = cong suc refl
+
 vec-list-length : {A : Set} {n : ℕ}
                 → (xs : Vec A n)
                 → n ≡ length (vec-list xs)
                 
-vec-list-length xs = {!!}
-
+vec-list-length [] = refl
+vec-list-length (x ∷ xs) rewrite length-suc x (vec-list xs) = cong suc (vec-list-length xs)
 
 ----------------
 -- Exercise 9 --
@@ -343,8 +401,13 @@ Matrix A m n = Vec (Vec A n) m
    of two vectors of the same length.
 -}
 
+_+ⱽ_ : {n : ℕ} → Vec ℕ n → Vec ℕ n → Vec ℕ n
+[] +ⱽ [] = []
+(x ∷ v1) +ⱽ (x₁ ∷ v2) = (x + x₁) ∷ (v1 +ⱽ v2)
+
 _+ᴹ_ : {m n : ℕ} → Matrix ℕ m n → Matrix ℕ m n → Matrix ℕ m n
-xss +ᴹ yss = {!!}
+[] +ᴹ [] = []
+(xss ∷ xss₁) +ᴹ (yss ∷ yss₁) = (xss +ⱽ yss) ∷ (xss₁ +ᴹ yss₁)
 
 
 -----------------------------
@@ -372,7 +435,11 @@ xss +ᴹ yss = {!!}
 list-vec-list : {A : Set}
               → vec-list ∘ list-vec ≡ id {A = List A}
               
-list-vec-list = {!!}
+list-vec-list = fun-ext list-vec-list-app
+   where
+      list-vec-list-app : {A : Set} → (x : List A) → (vec-list ∘ list-vec) x ≡ id x
+      list-vec-list-app [] = refl
+      list-vec-list-app (x ∷ x₁) = cong (λ xs → x ∷ xs) (list-vec-list-app x₁)
 
 
 -----------------
@@ -390,7 +457,7 @@ list-vec-list = {!!}
 -}
 
 transpose : {A : Set} {m n : ℕ} → Matrix A m n → Matrix A n m
-transpose xss = {!!}
+transpose xss = {! !}
 
 
 -----------------
@@ -724,3 +791,4 @@ vec-list-vec = {!!}
 -----------------------------------
 -----------------------------------
 
+           
