@@ -32,7 +32,7 @@ open import Function             using (id; _∘_)
 open import Relation.Nullary     using (¬_)
 
 import Relation.Binary.PropositionalEquality as Eq
-open Eq                          using (_≡_; refl; sym; trans; cong; subst)
+open Eq                          using (_≡_; refl; sym; trans; cong; subst; inspect)
 open Eq.≡-Reasoning              using (begin_; _≡⟨⟩_; step-≡; _∎)
 
 {-
@@ -68,7 +68,9 @@ postulate fun-ext : ∀ {a b} → Extensionality a b
 -}
 
 take-n : {A : Set} {n m : ℕ} → Vec A (n + m) → Vec A n
-take-n xs = {!!}
+take-n {A} {n} {zero} xs = subst (Vec A) (+-identityʳ n) xs
+take-n {A} {zero} {suc m} (x ∷ xs) = take-n xs
+take-n {A} {suc n} {suc m} (x ∷ xs) = take-n (subst (Vec A) (+-suc n m) xs)
 
 {-
    Now define a function that extracts the first `n` elements from a
@@ -82,10 +84,9 @@ take-n xs = {!!}
 -}
 
 take-n' : {A : Set} {n m : ℕ} → Vec A (m + n) → Vec A n
-take-n' xs = {!!}
+take-n' {A} {n} {m} xs = take-n (subst (Vec A) (+-comm m n) xs)
 
-
-----------------
+--------------
 -- Exercise 2 --
 ----------------
 
@@ -117,7 +118,11 @@ list-vec (x ∷ xs) = x ∷ list-vec xs
 list-vec-list : {A : Set}
               → vec-list ∘ list-vec ≡ id {A = List A}
 
-list-vec-list = {!!}
+list-vec-list = fun-ext list-vec-list-app
+   where
+      list-vec-list-app : {A : Set} → (x : List A) → (vec-list ∘ list-vec) x ≡ id x
+      list-vec-list-app [] = refl
+      list-vec-list-app (x ∷ x₁) = cong (λ xs → x ∷ xs) (list-vec-list-app x₁)
 
 {-
    Note: The dual lemma, showing that `list-vec` is the left inverse
@@ -155,7 +160,8 @@ lookup-total-Σ : {A : Set} {n : ℕ}
                → i < n
                → Σ[ x ∈ A ] (lookup xs i ≡ just x)
 
-lookup-total-Σ xs i p = {!!}
+lookup-total-Σ (x ∷ xs) zero p = record { fst = x ; snd = refl }
+lookup-total-Σ (x ∷ xs) (suc i) (s≤s p) = lookup-total-Σ xs i p
 
 
 ----------------
@@ -173,8 +179,11 @@ lookup-total-Σ xs i p = {!!}
 -}
 
 vec-list-Σ : {A : Set} {n : ℕ} → Vec A n → Σ[ xs ∈ List A ] (length xs ≡ n)
-vec-list-Σ xs = {!!}
+vec-list-Σ [] = [] , refl
+vec-list-Σ (x ∷ xs) with vec-list-Σ xs
+... | xs' , refl = (x ∷ xs') , refl
 
+-- Idea: You can deconstruct dependent pair (or any other record) by using `with`.
 
 ----------------
 -- Exercise 5 --
@@ -250,7 +259,19 @@ open _≃_
           ≃
           Σ[ xy ∈ Σ[ x ∈ A ] (B x) ] (C (proj₁ xy) (proj₂ xy))
         
-Σ-assoc = {!!}
+Σ-assoc {A} {B} {C} = record {
+      to = λ (x , y , z) → ( (x , y) ,  z ) ;
+      from = from' ;
+      from∘to = λ x → refl ;
+      to∘from = λ y → refl }
+
+   where
+
+      from' : Σ-syntax (Σ-syntax A B) (λ xy → C (proj₁ xy) (proj₂ xy)) → Σ-syntax A (λ x → Σ-syntax (B x) (C x))
+      from' ((fst , snd₁) , snd) = fst , snd₁ , snd
+
+-- Idea: You can use patternmatching lambdas: λ {x → x}. 
+-- Idea: Records are equal if they are equal element wise. This is called ??? property. (This is what is going on where we use refls.) 
 
 {-
    Second, prove the same thing using copatterns. For a reference on copatterns,
@@ -262,7 +283,13 @@ open _≃_
           ≃
           Σ[ xy ∈ Σ[ x ∈ A ] (B x) ] (C (proj₁ xy) (proj₂ xy))
 
-Σ-assoc' = {!!}
+to Σ-assoc' (x , y , z) = (x , y) ,  z
+from Σ-assoc' ((x , y) , z) = x , y , z
+from∘to Σ-assoc' _ = refl
+to∘from Σ-assoc' _ = refl
+
+-- Note: Copatterns are not the same as patterns. Some things migh not work properly (e.g. termination checking).
+--    Assistent said: For simple cases it works fine. But it is better to use regular pattern matching.
 
 
 ----------------
@@ -277,8 +304,37 @@ open _≃_
 -}
 
 ≃-List : {A B : Set} → A ≃ B → List A ≃ List B
-≃-List = {!!}
+≃-List iso = record {
+   to = map (to iso) ;
+   from = map (from iso) ;
+   from∘to = λ xs → begin
+            map (from iso) (map (to iso) xs)
+         ≡⟨ sym (map-compose xs) ⟩
+            map (from iso ∘ to iso) xs
+         ≡⟨ cong ((λ f → map f xs)) (fun-ext (from∘to iso)) ⟩
+           map (λ x → x) xs
+         ≡⟨ map-id xs ⟩
+            xs
+         ∎ ;
+   to∘from = λ xs →
+      begin 
+         map (to iso) (map (from iso) xs)
+      ≡⟨ sym (map-compose xs) ⟩
+         map (to iso ∘ from iso) xs
+      ≡⟨ cong (λ f → map f xs) (fun-ext (to∘from iso)) ⟩
+         map id xs
+      ≡⟨ map-id xs ⟩
+         xs
+      ∎ }
 
+-- Ideas: Equality reasoning is great for solving such problems.
+--    Start with:
+--       begin
+--          inital type
+--       ≡⟨ ? ⟩
+--          end type
+--       ∎
+--    Where ? is, add equality type which is applied "from left to the right".
 
 ----------------
 -- Exercise 8 --
@@ -305,7 +361,27 @@ open DecSet
 -}
 
 DecList : (DS : DecSet) → Σ[ DS' ∈ DecSet ] (DSet DS' ≡ List (DSet DS))
-DecList DS = {!!}
+DecList record { DSet = s ; test-≡ = t } =
+   (record {
+      DSet = List s ;
+      test-≡ = list-test-≡ }) ,
+   refl
+
+      where
+
+         list-test-≡ : (x y : List s) → Dec (x ≡ y)
+         list-test-≡ [] []             = yes refl
+         list-test-≡ [] (y ∷ ys)       = no (λ { () })
+         list-test-≡ (x ∷ xs) []       = no (λ { () })
+         list-test-≡ (x ∷ xs) (y ∷ ys) with (t x y)
+         list-test-≡ (x ∷ xs) (y ∷ ys)   | yes refl with list-test-≡ xs ys 
+         list-test-≡ (x ∷ xs) (y ∷ ys)   | yes refl   | yes refl = yes refl
+         list-test-≡ (x ∷ xs) (y ∷ ys)   | yes refl   | no p = no λ { refl → p refl }
+         -- Question: Why can we perform substution on '(some eq) → ⊥'?
+         -- list-test-≡ (x ∷ xs) (y ∷ ys)   | yes refl   | no p = no (subst {! λ x → (x → ¬) !} {!   !})
+         list-test-≡ (x ∷ xs) (y ∷ ys)   | no p = no λ {refl → p refl}
+ 
+-- Idea: Two records are the same if its components are the same. This is called Record extensionality principle.
 
 
 ----------------
@@ -375,20 +451,29 @@ data _∈_ {A : Set} : A → List A → Set where
   ∈-there : {x y : A} {xs : List A} → x ∈ xs → x ∈ (y ∷ xs)
 
 data NoDup {A : Set} : List A → Set where
-  {- EXERCISE: replace this comment with constructors for `NoDup` -}
+   []ᴺ : NoDup []
+   _∷ᴺ_ : (x : A) → (xs : List A) → NoDup xs → ¬ (x ∈ xs) → NoDup (x ∷ xs) 
+
+-- Idea: We can define predicates inductivlely (i.e. as inductivly defined dependent types). 
+-- Idea: The inductive definition of a predicate can follow the structure of the type they are defined over
+--       (e.g., `List A`).
+-- Note: We have constructed a new inductivly defined dependent type which elements are empty lists. Observe, how did
+--       we use the constructres to derive the wanted propertly.
+-- Idea: Define predicates as datatypes instead of functions.
+-- Note: As shown below, we can prove the predicate defined as inductive type by constructing an element of that type.
 
 {-
    Next, prove some sanity-checks about the correctness of `NoDup`.
 -}
 
 nodup-test₁ : NoDup {ℕ} []
-nodup-test₁ = {!!}
+nodup-test₁ = []ᴺ
 
 nodup-test₂ : NoDup (4 ∷ 2 ∷ [])
-nodup-test₂ = {!!}
+nodup-test₂ = (4 ∷ᴺ (2 ∷ [])) ((2 ∷ᴺ []) []ᴺ (λ { () })) λ { (∈-there ()) } 
 
 nodup-test₃ : ¬ (NoDup (4 ∷ 2 ∷ 4 ∷ []))
-nodup-test₃ = {!!}
+nodup-test₃ ((.4 ∷ᴺ .(2 ∷ 4 ∷ [])) p x) = x (∈-there ∈-here)
 
 {-
    Finally, prove that `add` preserves the no-duplicates property.
@@ -402,8 +487,22 @@ add-nodup : {DS : DecSet} → (xs : List (DSet DS)) → (x : DSet DS)
           → NoDup {DSet DS} xs
           → NoDup {DSet DS} (add {DS} xs x)
 
-add-nodup xs x' p = {!!}
+add-nodup [] x' p = (x' ∷ᴺ []) []ᴺ λ { () }
+add-nodup {DS} (x ∷ xs) x' p with (test-≡ DS) x x'
+... | yes refl = p
+add-nodup {DS} (x ∷ xs) x' ((x ∷ᴺ xs) p r) | no p' =
+   (x ∷ᴺ add xs x') (add-nodup xs x' p) λ p'' → r (then-is-∈ p' p'')
 
+   where
+
+      then-is-∈ : {DS : DecSet} {x x' : (DSet DS)} {xs : List (DSet DS)} → (x ≡ x' → ⊥) → (x ∈ add {DS} xs x') → (x ∈ xs)
+      then-is-∈ {DS} {x} {x'} {[]} r ∈-here = ⊥-elim (r refl)
+      then-is-∈ {DS} {x} {x'} {x₁ ∷ xs'} r s with (test-≡ DS) x₁ x'
+      ... | yes refl = s
+      then-is-∈ {DS} {x} {x'} {x₁ ∷ xs'} r ∈-here | no p'' = ∈-here
+      then-is-∈ {DS} {x} {x'} {x₁ ∷ xs'} r (∈-there s) | no p'' = ∈-there (then-is-∈ r s)
+
+-- Idea: Proof by induction.
 
 -----------------
 -- Exercise 10 --
@@ -460,5 +559,47 @@ from-bin' b = from-bin'-aux b 0
 
 open import Data.Nat.Properties
 
-from-bin-≡ : (b : Bin) → from-bin b ≡ from-bin' b
-from-bin-≡ b = {!!}
+private
+
+   aux' : (n : ℕ) → (m : ℕ) → (2 ^ n) * suc m ≡ (2 ^ n) + (2 ^ n) * m
+   aux' n m = *-suc (2 ^ n) m
+
+   aux''' : (n : ℕ ) → (2 ^ n) * 1 ≡ (2 ^ n) + zero
+   aux''' n =
+      begin
+         (2 ^ n) * 1
+      ≡⟨ *-suc (2 ^ n) 0 ⟩
+         (2 ^ n) + ((2 ^ n) * 0)
+      ≡⟨ cong (_+_ (2 ^ n)) (*-zeroʳ (2 ^ n)) ⟩
+         (2 ^ n) + zero
+      ∎
+
+   aux'' : (n : ℕ) → (m : ℕ) → (2 ^ n) * (m + (m + zero)) ≡ (2 ^ (suc n)) * m
+   aux'' n m =
+      begin
+         (2 ^ n) * (m + (m + zero))
+      ≡⟨ refl ⟩
+         (2 ^ n) * (2 * m)
+      ≡⟨ sym (*-assoc (2 ^ n) 2 m) ⟩
+         ((2 ^ n) * 2) * m
+      ≡⟨ cong (λ x → x * m) (*-suc (2 ^ n) 1) ⟩
+         ((2 ^ n) + ((2 ^ n) * 1)) * m 
+      ≡⟨ cong (λ x → ((2 ^ n) + x) * m) (aux''' n) ⟩
+         ((2 ^ n) + ((2 ^ n) + zero)) * m
+      ≡⟨ refl ⟩
+         (2 ^ (suc n)) * m
+      ∎
+
+   aux : (n : ℕ) → (b : Bin) → (2 ^ n) * from-bin b ≡ from-bin'-aux b n
+   aux n ⟨⟩ = *-zeroʳ (2 ^ n)
+   aux n (b' O) rewrite  aux'' n (from-bin b') = aux ((suc n)) b' 
+   aux n (b' I) = begin
+         (2 ^ n) * suc (from-bin b' + (from-bin b' + zero))
+      ≡⟨ aux' n (from-bin b' + (from-bin b' + zero)) ⟩
+         (2 ^ n) + (2 ^ n) * (from-bin b' + (from-bin b' + 0))
+      ≡⟨ cong (_+_ (2 ^ n)) (aux'' n (from-bin b')) ⟩
+         (2 ^ n) + (2 ^ (suc n)) * from-bin b'
+      ≡⟨ cong (_+_ (2 ^ n)) (aux (suc n) b') ⟩
+         (2 ^ n) + from-bin'-aux b' (suc n)
+      ∎
+       
